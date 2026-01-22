@@ -1,0 +1,783 @@
+Lab 6: Conditionals and Loops in Ansible
+Objectives
+By the end of this lab, students will be able to:
+
+• Understand and implement conditional logic using when statements in Ansible playbooks • Create and execute loops to handle repetitive tasks efficiently • Apply conditionals to control task execution based on system facts and variables • Use various loop constructs to install multiple packages and manage configurations • Combine conditionals and loops to create dynamic and flexible automation scripts • Troubleshoot common issues with conditional statements and loop structures
+
+Prerequisites
+Before starting this lab, students should have:
+
+• Basic understanding of YAML syntax and structure • Familiarity with Ansible playbook fundamentals from previous labs • Knowledge of Ansible facts and variables • Understanding of basic Linux commands and package management • Completion of Labs 1-5 in this series
+
+Lab Environment Setup
+Ready-to-Use Cloud Machines: Al Nafi provides pre-configured Linux-based cloud machines for this lab. Simply click Start Lab to access your environment - no need to build your own virtual machine or install additional software.
+
+Your lab environment includes: • Control node with Ansible pre-installed • Two managed nodes (target servers) • All necessary SSH keys and inventory files configured • Sample configuration files and templates
+
+Task 1: Understanding and Implementing Conditional Logic
+Subtask 1.1: Basic Conditional Statements
+Conditionals in Ansible allow you to control when tasks should run based on specific conditions. The when statement is the primary method for implementing conditional logic.
+
+Step 1: Create a new directory for this lab and navigate to it:
+
+mkdir ~/lab6-conditionals-loops
+cd ~/lab6-conditionals-loops
+Step 2: Create your first conditional playbook:
+
+nano basic-conditionals.yml
+Step 3: Add the following content to demonstrate basic conditional logic:
+
+---
+- name: Basic Conditionals Demo
+  hosts: all
+  gather_facts: yes
+  vars:
+    install_web_server: true
+    environment_type: "production"
+    
+  tasks:
+    - name: Install Apache web server (only if variable is true)
+      yum:
+        name: httpd
+        state: present
+      when: install_web_server == true
+      
+    - name: Start Apache service (only on production)
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+      when: environment_type == "production"
+      
+    - name: Display message for development environment
+      debug:
+        msg: "This is a development environment - web server not started"
+      when: environment_type == "development"
+      
+    - name: Install development tools (only on CentOS/RHEL)
+      yum:
+        name:
+          - git
+          - vim
+          - curl
+        state: present
+      when: ansible_os_family == "RedHat"
+      
+    - name: Install development tools (only on Ubuntu/Debian)
+      apt:
+        name:
+          - git
+          - vim
+          - curl
+        state: present
+      when: ansible_os_family == "Debian"
+Step 4: Run the playbook to see conditional logic in action:
+
+ansible-playbook -i inventory basic-conditionals.yml
+Subtask 1.2: Advanced Conditional Logic
+Step 1: Create a more complex conditional playbook:
+
+nano advanced-conditionals.yml
+Step 2: Add advanced conditional examples:
+
+---
+- name: Advanced Conditionals Demo
+  hosts: all
+  gather_facts: yes
+  vars:
+    required_memory_gb: 2
+    required_disk_space_gb: 10
+    
+  tasks:
+    - name: Check if system meets memory requirements
+      debug:
+        msg: "System has {{ ansible_memtotal_mb // 1024 }}GB RAM - meets requirements"
+      when: (ansible_memtotal_mb // 1024) >= required_memory_gb
+      
+    - name: Warning for insufficient memory
+      debug:
+        msg: "WARNING: System has only {{ ansible_memtotal_mb // 1024 }}GB RAM"
+      when: (ansible_memtotal_mb // 1024) < required_memory_gb
+      
+    - name: Install monitoring tools on servers with sufficient resources
+      yum:
+        name:
+          - htop
+          - iotop
+          - nethogs
+        state: present
+      when: 
+        - (ansible_memtotal_mb // 1024) >= required_memory_gb
+        - ansible_os_family == "RedHat"
+        
+    - name: Configure firewall (only if firewalld is installed)
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+      when: ansible_facts['packages']['firewalld'] is defined
+      ignore_errors: yes
+      
+    - name: Create backup directory (only on weekends)
+      file:
+        path: /opt/weekend-backup
+        state: directory
+        mode: '0755'
+      when: ansible_date_time.weekday in ['5', '6']  # Saturday=5, Sunday=6
+Step 3: Execute the advanced conditionals playbook:
+
+ansible-playbook -i inventory advanced-conditionals.yml
+Task 2: Implementing Loops for Repetitive Tasks
+Subtask 2.1: Basic Loop Structures
+Loops in Ansible help you avoid repetitive code by iterating over lists, dictionaries, or other data structures.
+
+Step 1: Create a basic loops demonstration playbook:
+
+nano basic-loops.yml
+Step 2: Add basic loop examples:
+
+---
+- name: Basic Loops Demo
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: Install multiple packages using loop
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - wget
+        - unzip
+        - tree
+        - nano
+        - screen
+        
+    - name: Create multiple users
+      user:
+        name: "{{ item }}"
+        state: present
+        shell: /bin/bash
+        create_home: yes
+      loop:
+        - alice
+        - bob
+        - charlie
+        
+    - name: Create multiple directories
+      file:
+        path: "/opt/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - app1
+        - app2
+        - app3
+        - logs
+        - backups
+        
+    - name: Display information about each user
+      debug:
+        msg: "Processing user: {{ item }}"
+      loop:
+        - alice
+        - bob
+        - charlie
+Step 3: Run the basic loops playbook:
+
+ansible-playbook -i inventory basic-loops.yml
+Subtask 2.2: Advanced Loop Techniques
+Step 1: Create an advanced loops playbook:
+
+nano advanced-loops.yml
+Step 2: Add advanced loop examples with dictionaries and complex data:
+
+---
+- name: Advanced Loops Demo
+  hosts: all
+  gather_facts: yes
+  vars:
+    web_applications:
+      - name: "webapp1"
+        port: 8080
+        user: "webapp1user"
+        directory: "/opt/webapp1"
+      - name: "webapp2"
+        port: 8081
+        user: "webapp2user"
+        directory: "/opt/webapp2"
+      - name: "webapp3"
+        port: 8082
+        user: "webapp3user"
+        directory: "/opt/webapp3"
+        
+    database_configs:
+      mysql:
+        port: 3306
+        config_file: "/etc/mysql/my.cnf"
+        service: "mysqld"
+      postgresql:
+        port: 5432
+        config_file: "/etc/postgresql/postgresql.conf"
+        service: "postgresql"
+        
+  tasks:
+    - name: Create users for web applications
+      user:
+        name: "{{ item.user }}"
+        state: present
+        shell: /bin/bash
+        create_home: yes
+      loop: "{{ web_applications }}"
+      
+    - name: Create directories for web applications
+      file:
+        path: "{{ item.directory }}"
+        state: directory
+        owner: "{{ item.user }}"
+        group: "{{ item.user }}"
+        mode: '0755'
+      loop: "{{ web_applications }}"
+      
+    - name: Display web application configurations
+      debug:
+        msg: "App: {{ item.name }}, Port: {{ item.port }}, User: {{ item.user }}"
+      loop: "{{ web_applications }}"
+      
+    - name: Process database configurations
+      debug:
+        msg: "Database: {{ item.key }}, Port: {{ item.value.port }}, Service: {{ item.value.service }}"
+      loop: "{{ database_configs | dict2items }}"
+      
+    - name: Install packages with version control
+      yum:
+        name: "{{ item.name }}"
+        state: "{{ item.state | default('present') }}"
+      loop:
+        - { name: "httpd", state: "present" }
+        - { name: "php", state: "present" }
+        - { name: "php-mysql", state: "present" }
+        - { name: "mariadb-server", state: "present" }
+      when: ansible_os_family == "RedHat"
+Step 3: Execute the advanced loops playbook:
+
+ansible-playbook -i inventory advanced-loops.yml
+Subtask 2.3: Loop Control and Filtering
+Step 1: Create a loop control demonstration:
+
+nano loop-control.yml
+Step 2: Add examples of loop control features:
+
+---
+- name: Loop Control Demo
+  hosts: all
+  gather_facts: yes
+  vars:
+    packages_to_install:
+      - name: "git"
+        required: true
+      - name: "docker"
+        required: false
+      - name: "nodejs"
+        required: true
+      - name: "python3-pip"
+        required: true
+      - name: "mongodb"
+        required: false
+        
+  tasks:
+    - name: Install only required packages
+      yum:
+        name: "{{ item.name }}"
+        state: present
+      loop: "{{ packages_to_install }}"
+      when: item.required == true
+      
+    - name: Create numbered backup directories
+      file:
+        path: "/backup/backup-{{ ansible_loop.index }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - daily
+        - weekly
+        - monthly
+      loop_control:
+        index_var: ansible_loop.index
+        
+    - name: Process items with custom loop variable name
+      debug:
+        msg: "Processing {{ current_item.name }} (Required: {{ current_item.required }})"
+      loop: "{{ packages_to_install }}"
+      loop_control:
+        loop_var: current_item
+        
+    - name: Install packages with pause between installations
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - curl
+        - wget
+        - rsync
+      loop_control:
+        pause: 2
+Step 3: Run the loop control playbook:
+
+ansible-playbook -i inventory loop-control.yml
+Task 3: Combining Conditionals and Loops
+Subtask 3.1: Complex Automation Scenarios
+Step 1: Create a comprehensive playbook combining conditionals and loops:
+
+nano combined-logic.yml
+Step 2: Add a realistic scenario combining both concepts:
+
+---
+- name: Combined Conditionals and Loops Demo
+  hosts: all
+  gather_facts: yes
+  vars:
+    server_role: "web"  # Options: web, database, monitoring
+    environment: "production"  # Options: development, staging, production
+    
+    applications:
+      web:
+        packages:
+          - httpd
+          - php
+          - php-mysql
+        services:
+          - httpd
+        ports:
+          - 80
+          - 443
+      database:
+        packages:
+          - mariadb-server
+          - mariadb
+        services:
+          - mariadb
+        ports:
+          - 3306
+      monitoring:
+        packages:
+          - nagios
+          - htop
+          - iotop
+        services:
+          - nagios
+        ports:
+          - 8080
+          
+  tasks:
+    - name: Install packages based on server role
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ applications[server_role].packages }}"
+      when: 
+        - server_role in applications
+        - ansible_os_family == "RedHat"
+        
+    - name: Start and enable services for the assigned role
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop: "{{ applications[server_role].services }}"
+      when: 
+        - server_role in applications
+        - environment == "production"
+        
+    - name: Configure firewall ports for production
+      firewalld:
+        port: "{{ item }}/tcp"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop: "{{ applications[server_role].ports }}"
+      when: 
+        - server_role in applications
+        - environment == "production"
+        - ansible_facts['packages']['firewalld'] is defined
+      ignore_errors: yes
+      
+    - name: Create application-specific directories
+      file:
+        path: "/opt/{{ server_role }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - config
+        - logs
+        - data
+        - backup
+      when: server_role in applications
+      
+    - name: Display configuration summary
+      debug:
+        msg: |
+          Server Configuration Summary:
+          - Role: {{ server_role }}
+          - Environment: {{ environment }}
+          - Packages: {{ applications[server_role].packages | join(', ') }}
+          - Services: {{ applications[server_role].services | join(', ') }}
+          - Ports: {{ applications[server_role].ports | join(', ') }}
+      when: server_role in applications
+Step 3: Test the playbook with different variables:
+
+# Test as web server
+ansible-playbook -i inventory combined-logic.yml
+
+# Test as database server
+ansible-playbook -i inventory combined-logic.yml -e "server_role=database"
+
+# Test in development environment
+ansible-playbook -i inventory combined-logic.yml -e "environment=development"
+Subtask 3.2: Error Handling and Validation
+Step 1: Create a playbook with error handling:
+
+nano error-handling.yml
+Step 2: Add error handling and validation logic:
+
+---
+- name: Error Handling with Conditionals and Loops
+  hosts: all
+  gather_facts: yes
+  vars:
+    critical_services:
+      - name: "sshd"
+        required: true
+      - name: "httpd"
+        required: false
+      - name: "mysqld"
+        required: false
+        
+  tasks:
+    - name: Check if critical services are running
+      service_facts:
+      
+    - name: Validate critical services status
+      debug:
+        msg: "Service {{ item.name }} is {{ 'running' if item.name in services and services[item.name].state == 'running' else 'not running' }}"
+      loop: "{{ critical_services }}"
+      when: item.required == true
+      
+    - name: Attempt to start required services
+      service:
+        name: "{{ item.name }}"
+        state: started
+      loop: "{{ critical_services }}"
+      when: 
+        - item.required == true
+        - item.name not in services or services[item.name].state != 'running'
+      ignore_errors: yes
+      register: service_start_results
+      
+    - name: Report service start failures
+      debug:
+        msg: "Failed to start {{ item.item.name }}: {{ item.msg | default('Unknown error') }}"
+      loop: "{{ service_start_results.results }}"
+      when: 
+        - service_start_results is defined
+        - item.failed is defined
+        - item.failed == true
+        
+    - name: Create backup of important files
+      copy:
+        src: "{{ item }}"
+        dest: "{{ item }}.backup.{{ ansible_date_time.epoch }}"
+        remote_src: yes
+      loop:
+        - /etc/passwd
+        - /etc/group
+        - /etc/hosts
+      when: item is exists
+      ignore_errors: yes
+Step 3: Execute the error handling playbook:
+
+ansible-playbook -i inventory error-handling.yml
+Task 4: Practical Application - Multi-Environment Deployment
+Subtask 4.1: Complete Deployment Scenario
+Step 1: Create a comprehensive deployment playbook:
+
+nano multi-environment-deploy.yml
+Step 2: Add a complete deployment scenario:
+
+---
+- name: Multi-Environment Application Deployment
+  hosts: all
+  gather_facts: yes
+  vars:
+    app_name: "mywebapp"
+    app_version: "1.0.0"
+    environment: "{{ env | default('development') }}"
+    
+    environment_configs:
+      development:
+        database_host: "localhost"
+        debug_mode: true
+        log_level: "DEBUG"
+        backup_enabled: false
+        monitoring_enabled: false
+      staging:
+        database_host: "staging-db.example.com"
+        debug_mode: true
+        log_level: "INFO"
+        backup_enabled: true
+        monitoring_enabled: true
+      production:
+        database_host: "prod-db.example.com"
+        debug_mode: false
+        log_level: "ERROR"
+        backup_enabled: true
+        monitoring_enabled: true
+        
+    required_packages:
+      - name: "httpd"
+        environments: ["development", "staging", "production"]
+      - name: "php"
+        environments: ["development", "staging", "production"]
+      - name: "mysql"
+        environments: ["development", "staging", "production"]
+      - name: "redis"
+        environments: ["staging", "production"]
+      - name: "memcached"
+        environments: ["production"]
+        
+  tasks:
+    - name: Validate environment parameter
+      fail:
+        msg: "Invalid environment: {{ environment }}. Must be development, staging, or production"
+      when: environment not in environment_configs
+      
+    - name: Install environment-specific packages
+      yum:
+        name: "{{ item.name }}"
+        state: present
+      loop: "{{ required_packages }}"
+      when: 
+        - environment in item.environments
+        - ansible_os_family == "RedHat"
+        
+    - name: Create application directory structure
+      file:
+        path: "/opt/{{ app_name }}/{{ item }}"
+        state: directory
+        owner: apache
+        group: apache
+        mode: '0755'
+      loop:
+        - config
+        - logs
+        - uploads
+        - cache
+        - sessions
+      when: "'httpd' in ansible_facts.packages or 'apache2' in ansible_facts.packages"
+      
+    - name: Generate environment-specific configuration
+      template:
+        src: app-config.j2
+        dest: "/opt/{{ app_name }}/config/app.conf"
+        owner: apache
+        group: apache
+        mode: '0644'
+      vars:
+        config: "{{ environment_configs[environment] }}"
+      when: environment in environment_configs
+      
+    - name: Configure log rotation (production and staging only)
+      copy:
+        content: |
+          /opt/{{ app_name }}/logs/*.log {
+              daily
+              rotate 30
+              compress
+              delaycompress
+              missingok
+              notifempty
+              create 644 apache apache
+          }
+        dest: "/etc/logrotate.d/{{ app_name }}"
+        mode: '0644'
+      when: environment in ['staging', 'production']
+      
+    - name: Setup backup cron job
+      cron:
+        name: "{{ app_name }} backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/backup-{{ app_name }}.sh"
+        user: root
+      when: environment_configs[environment].backup_enabled == true
+      
+    - name: Install monitoring agent
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - htop
+        - iotop
+        - nethogs
+      when: 
+        - environment_configs[environment].monitoring_enabled == true
+        - ansible_os_family == "RedHat"
+        
+    - name: Start and enable services based on environment
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - httpd
+        - mysqld
+      when: environment != "development"
+      
+    - name: Display deployment summary
+      debug:
+        msg: |
+          Deployment Summary:
+          - Application: {{ app_name }} v{{ app_version }}
+          - Environment: {{ environment }}
+          - Database Host: {{ environment_configs[environment].database_host }}
+          - Debug Mode: {{ environment_configs[environment].debug_mode }}
+          - Backup Enabled: {{ environment_configs[environment].backup_enabled }}
+          - Monitoring Enabled: {{ environment_configs[environment].monitoring_enabled }}
+Step 3: Create the configuration template:
+
+mkdir templates
+nano templates/app-config.j2
+Step 4: Add the template content:
+
+# {{ app_name }} Configuration File
+# Environment: {{ environment }}
+# Generated: {{ ansible_date_time.iso8601 }}
+
+[database]
+host = {{ config.database_host }}
+port = 3306
+name = {{ app_name }}_{{ environment }}
+
+[application]
+debug = {{ config.debug_mode | lower }}
+log_level = {{ config.log_level }}
+version = {{ app_version }}
+
+[features]
+backup_enabled = {{ config.backup_enabled | lower }}
+monitoring_enabled = {{ config.monitoring_enabled | lower }}
+
+{% if environment == 'production' %}
+[security]
+ssl_enabled = true
+session_timeout = 1800
+{% endif %}
+Step 5: Test the deployment in different environments:
+
+# Deploy to development
+ansible-playbook -i inventory multi-environment-deploy.yml -e "env=development"
+
+# Deploy to staging
+ansible-playbook -i inventory multi-environment-deploy.yml -e "env=staging"
+
+# Deploy to production
+ansible-playbook -i inventory multi-environment-deploy.yml -e "env=production"
+Troubleshooting Common Issues
+Issue 1: Conditional Logic Not Working
+Problem: Tasks are not executing when expected
+
+Solution: Check your conditional syntax and variable types:
+
+# Incorrect - comparing string to boolean
+when: install_package == "true"
+
+# Correct - proper boolean comparison
+when: install_package == true
+when: install_package | bool
+Issue 2: Loop Variables Not Accessible
+Problem: Cannot access loop variables in nested structures
+
+Solution: Use loop_control to customize variable names:
+
+- name: Process complex data
+  debug:
+    msg: "{{ current_item.name }}"
+  loop: "{{ complex_list }}"
+  loop_control:
+    loop_var: current_item
+Issue 3: Undefined Variables in Conditionals
+Problem: Playbook fails when variables are undefined
+
+Solution: Use default values and proper variable checking:
+
+when: my_variable is defined and my_variable == "expected_value"
+when: (my_variable | default('')) != ''
+Verification and Testing
+Step 1: Create a verification playbook:
+
+nano verify-lab.yml
+Step 2: Add verification tasks:
+
+---
+- name: Lab 6 Verification
+  hosts: all
+  gather_facts: yes
+  
+  tasks:
+    - name: Check if web server is installed
+      package_facts:
+      
+    - name: Verify conditional package installation
+      debug:
+        msg: "Apache is {{ 'installed' if 'httpd' in ansible_facts.packages else 'not installed' }}"
+        
+    - name: Check created users
+      getent:
+        database: passwd
+        key: "{{ item }}"
+      loop:
+        - alice
+        - bob
+        - charlie
+      ignore_errors: yes
+      
+    - name: Verify directory creation
+      stat:
+        path: "/opt/{{ item }}"
+      loop:
+        - app1
+        - app2
+        - app3
+      register: directory_stats
+      
+    - name: Report directory status
+      debug:
+        msg: "Directory /opt/{{ item.item }} {{ 'exists' if item.stat.exists else 'does not exist' }}"
+      loop: "{{ directory_stats.results }}"
+Step 3: Run the verification:
+
+ansible-playbook -i inventory verify-lab.yml
+Conclusion
+In this lab, you have successfully learned and implemented:
+
+• Conditional Logic: You mastered the use of when statements to control task execution based on variables, facts, and system conditions. This allows your playbooks to make intelligent decisions about what actions to take.
+
+• Loop Structures: You implemented various types of loops to handle repetitive tasks efficiently, from simple lists to complex dictionaries and nested data structures.
+
+• Advanced Techniques: You combined conditionals and loops to create sophisticated automation logic that can adapt to different environments and requirements.
+
+• Error Handling: You learned to implement proper error handling and validation in your automation scripts, making them more robust and reliable.
+
+• Real-World Applications: You created practical deployment scenarios that demonstrate how these concepts work together in production environments.
+
+Why This Matters: Conditionals and loops are fundamental building blocks of automation. They transform simple, static playbooks into dynamic, intelligent automation solutions that can:
+
+Adapt to different operating systems and environments
+Handle varying infrastructure requirements
+Implement complex deployment strategies
+Provide robust error handling and recovery
+Scale efficiently across multiple systems
+These skills are essential for the Red Hat Enterprise Linux Automation with Ansible certification and are directly applicable to real-world automation challenges you'll encounter in production environments.
+
+Next Steps: Practice creating your own conditional logic and loops for your specific use cases. Experiment with different data structures and conditional expressions to become comfortable with these powerful Ansible features.

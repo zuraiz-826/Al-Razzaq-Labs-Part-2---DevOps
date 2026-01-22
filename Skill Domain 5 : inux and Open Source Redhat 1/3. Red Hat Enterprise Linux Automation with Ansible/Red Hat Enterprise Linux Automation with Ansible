@@ -1,0 +1,69 @@
+Lab 1: Introduction to Ansible
+Lab Objective:
+By the end of this lab, students will be able to:
+
+â¢ Understand what Ansible is and its core components â¢ Install Ansible on a control node using package managers â¢ Create and configure a basic inventory file â¢ Verify successful communication with managed hosts using the ping module
+
+Prerequisites:
+Before starting this lab, students should have:
+
+â¢ Basic understanding of Linux command line operations â¢ Familiarity with SSH concepts and key-based authentication â¢ Knowledge of text editors like nano or vim â¢ Understanding of YAML syntax basics
+Environment Setup:
+Linux Machine: Al Nafi provides a bare-metal Linux cloud machine via the "Start Lab" button.
+
+Students will install all tools during the lab.
+
+Tasks:
+Task 1: Install Ansible on the Control Node
+Objective: Install Ansible on the Linux machine.
+
+Steps:
+
+Open the terminal and run the following commands to install Ansible on your system:
+
+sudo apt update
+sudo apt install ansible
+Verify the installation:
+
+ansible --version
+Task 2: Set up a Basic Inventory
+Objective: Create a basic inventory file to list managed hosts.
+
+Steps:
+
+Create an inventory file by running:
+
+sudo nano /etc/ansible/hosts
+Add a line for the managed host (localhost in this case):
+
+[local]
+localhost ansible_connection=local
+Save the file and exit the editor.
+
+Task 3: Run a Simple Ping Command
+Objective: Test the Ansible setup by running a "ping" command on the managed host.
+
+Steps:
+
+Run the following Ansible ping command to check connectivity:
+
+ansible local -m ping
+If successful, Ansible will return a pong response.
+
+Verification:
+Verification Steps:
+
+Check if Ansible is installed by running ansible --version.
+
+Verify that the "ping" command returns pong.
+
+Ensure the inventory file contains the correct managed host entry (localhost).
+
+Conclusion:
+Congratulations! You have successfully completed Lab 1: Introduction to Ansible. In this lab, you accomplished the following key tasks:
+
+Why This Matters: This foundational knowledge is crucial for Red Hat Enterprise Linux Automation with Ansible certification and real-world automation scenarios. You now have a working Ansible environment that can manage multiple hosts simultaneously, which is the first step toward automating complex infrastructure tasks.
+
+Next Steps: With this basic setup complete, you're ready to explore more advanced Ansible concepts like playbooks, roles, and complex automation workflows. The inventory and connectivity you've established will serve as the foundation for all future Ansible automation tasks.
+
+The skills you've learned in this lab directly apply to enterprise environments where Ansible is used to manage hundreds or thousands of servers efficiently and consistently.

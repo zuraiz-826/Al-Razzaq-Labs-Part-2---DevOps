@@ -1,0 +1,96 @@
+Lab 2: Remote Login to Linux Systems
+Objectives
+To securely log in to a Linux system remotely using SSH.
+To generate and configure SSH key pairs for authentication.
+To understand basic SSH server configuration.
+Prerequisites
+A local Linux/macOS machine (or Windows with WSL2/OpenSSH installed).
+A remote Linux system with SSH server installed (e.g., Ubuntu, CentOS).
+Terminal access on both systems.
+Basic familiarity with Linux command-line operations.
+Task 1: Generate SSH Key Pair
+Objective: Create a secure SSH key pair (public/private) for authentication.
+Subtask 1.1: Check for Existing SSH Keys
+Open a terminal on your local machine.
+Run the following command to check for existing keys:
+ls ~/.ssh/
+If you see files like id_rsa and id_rsa.pub, you may skip key generation (or create a new pair).
+If the .ssh directory doesn’t exist, proceed to Subtask 1.2.
+Subtask 1.2: Generate a New Key Pair
+Run the following command (replace your_email@example.com with your email):
+
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+-t rsa: Specifies the key type (RSA).
+-b 4096: Sets key length to 4096 bits (secure default).
+-C: Adds a comment (optional).
+Follow the prompts:
+
+Press Enter to save the key in the default location (~/.ssh/id_rsa).
+Enter a passphrase (recommended for security) or leave empty.
+Verify the generated keys:
+
+ls ~/.ssh/
+Expected output: id_rsa (private key) and id_rsa.pub (public key).
+Troubleshooting Tips
+If ssh-keygen is not found, install OpenSSH:
+sudo apt install openssh-client  # Debian/Ubuntu
+sudo yum install openssh-clients # CentOS/RHEL
+Task 2: Configure SSH Server on the Remote Machine
+Objective: Set up the remote Linux system to accept SSH key-based authentication.
+Subtask 2.1: Install SSH Server (if not present)
+Log in to the remote machine (via console or existing SSH).
+
+Install the SSH server (if not installed):
+
+sudo apt install openssh-server  # Debian/Ubuntu
+sudo yum install openssh-server  # CentOS/RHEL
+Start and enable the SSH service:
+
+sudo systemctl start sshd
+sudo systemctl enable sshd
+Subtask 2.2: Copy Public Key to Remote Machine
+On your local machine, copy the public key to the remote server:
+
+ssh-copy-id username@remote_server_ip
+Replace username and remote_server_ip with actual values.
+Enter the remote system’s password when prompted.
+Alternatively, manually append the public key:
+
+cat ~/.ssh/id_rsa.pub | ssh username@remote_server_ip "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+Subtask 2.3: Secure SSH Server Configuration
+Edit the SSH server config file on the remote machine:
+sudo nano /etc/ssh/sshd_config
+Update the following settings for security:
+PasswordAuthentication no         # Disable password login
+PermitRootLogin no                # Disable root login
+PubkeyAuthentication yes          # Enable key-based auth
+Restart the SSH service:
+sudo systemctl restart sshd
+Troubleshooting Tips
+If ssh-copy-id fails, ensure the remote server allows password authentication temporarily.
+Check firewall rules (sudo ufw allow 22 for Ubuntu).
+Task 3: Log in Remotely Using SSH
+Objective: Establish a secure SSH connection using key-based authentication.
+Subtask 3.1: Test SSH Login
+From your local machine, run:
+ssh username@remote_server_ip
+If a passphrase was set, enter it.
+Expected outcome: You should log in without a password prompt.
+Subtask 3.2: Verify Connection
+Check your remote session:
+whoami  # Should return your remote username
+hostname  # Should return the remote system's hostname
+Troubleshooting Tips
+If login fails, verify:
+The public key is in ~/.ssh/authorized_keys on the remote machine.
+Permissions: chmod 700 ~/.ssh and chmod 600 ~/.ssh/authorized_keys.
+Conclusion
+Successfully generated an SSH key pair for secure authentication.
+Configured the remote SSH server to accept key-based logins.
+Established a password-less remote login session using SSH.
+Next Steps
+Explore SSH agent for managing passphrases (ssh-agent).
+Learn about SSH port forwarding for secure tunneling.
+Additional Resources
+OpenSSH Manual
+Red Hat OpenShift documentation for containerized SSH setups.

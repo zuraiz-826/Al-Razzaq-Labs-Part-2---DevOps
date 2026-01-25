@@ -1,0 +1,815 @@
+Lab 8: Integrating Camel with Apache ActiveMQ
+Objectives
+By the end of this lab, you will be able to:
+
+Set up and configure an Apache ActiveMQ message broker
+Create Apache Camel routes that integrate with ActiveMQ for message-based communication
+Implement message producers and consumers using Camel and ActiveMQ
+Test end-to-end message communication through the broker
+Understand the fundamentals of Enterprise Integration Patterns using Camel and ActiveMQ
+Configure connection pooling and error handling for robust messaging solutions
+Prerequisites
+Before starting this lab, you should have:
+
+Basic understanding of Java programming concepts
+Familiarity with Maven build tool
+Knowledge of XML configuration files
+Understanding of message-oriented middleware concepts
+Basic Linux command line skills
+Java Development Kit (JDK) 11 or higher installed
+Lab Environment Setup
+Ready-to-Use Cloud Machines: Al Nafi provides pre-configured Linux-based cloud machines with all necessary tools installed. Simply click Start Lab to access your environment - no need to build your own VM or install software.
+
+Your cloud machine includes:
+
+Java JDK 11
+Apache Maven 3.8+
+Apache ActiveMQ 5.17+
+Apache Camel 3.20+
+Text editors (nano, vim)
+All required dependencies pre-installed
+Task 1: Set up an ActiveMQ Broker
+Subtask 1.1: Download and Install ActiveMQ
+First, let's verify that ActiveMQ is available and set up the environment.
+
+# Navigate to home directory
+cd ~
+
+# Check if ActiveMQ is already installed
+ls -la /opt/activemq* 2>/dev/null || echo "ActiveMQ not found in /opt"
+
+# If not installed, download ActiveMQ
+wget https://archive.apache.org/dist/activemq/5.17.6/apache-activemq-5.17.6-bin.tar.gz
+
+# Extract the archive
+tar -xzf apache-activemq-5.17.6-bin.tar.gz
+
+# Move to a standard location
+sudo mv apache-activemq-5.17.6 /opt/activemq
+
+# Create a symbolic link for easier access
+sudo ln -sf /opt/activemq /opt/activemq-current
+
+# Set proper permissions
+sudo chown -R $USER:$USER /opt/activemq
+Subtask 1.2: Configure ActiveMQ
+Let's configure ActiveMQ with basic settings suitable for our lab.
+
+# Navigate to ActiveMQ configuration directory
+cd /opt/activemq/conf
+
+# Create a backup of the original configuration
+cp activemq.xml activemq.xml.backup
+
+# Create a custom configuration file
+cat > activemq.xml << 'EOF'
+<beans
+  xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+  http://activemq.apache.org/schema/core http://activemq.apache.org/schema/core/activemq-core.xsd">
+
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <value>file:${activemq.conf}/credentials.properties</value>
+        </property>
+    </bean>
+
+    <broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}">
+
+        <destinationPolicy>
+            <policyMap>
+              <policyEntries>
+                <policyEntry topic=">" >
+                  <pendingMessageLimitStrategy>
+                    <constantPendingMessageLimitStrategy limit="1000"/>
+                  </pendingMessageLimitStrategy>
+                </policyEntry>
+              </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+
+        <managementContext>
+            <managementContext createConnector="false"/>
+        </managementContext>
+
+        <persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"/>
+        </persistenceAdapter>
+
+        <systemUsage>
+            <systemUsage>
+                <memoryUsage>
+                    <memoryUsage percentOfJvmHeap="70" />
+                </memoryUsage>
+                <storeUsage>
+                    <storeUsage limit="100 gb"/>
+                </storeUsage>
+                <tempUsage>
+                    <tempUsage limit="50 gb"/>
+                </tempUsage>
+            </systemUsage>
+        </systemUsage>
+
+        <transportConnectors>
+            <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+        </transportConnectors>
+
+        <shutdownHooks>
+            <bean xmlns="http://www.springframework.org/schema/beans" class="org.apache.activemq.hooks.SpringContextHook" />
+        </shutdownHooks>
+
+    </broker>
+
+    <import resource="jetty.xml"/>
+
+</beans>
+EOF
+Subtask 1.3: Start ActiveMQ Broker
+Now let's start the ActiveMQ broker and verify it's running correctly.
+
+# Start ActiveMQ in the background
+cd /opt/activemq
+./bin/activemq start
+
+# Wait a few seconds for startup
+sleep 10
+
+# Check if ActiveMQ is running
+./bin/activemq status
+
+# Verify the process is running
+ps aux | grep activemq | grep -v grep
+
+# Check if the ports are listening
+netstat -tlnp | grep -E ':(61616|8161)'
+Subtask 1.4: Access ActiveMQ Web Console
+Let's verify the web console is accessible and explore the management interface.
+
+# Check if the web console is accessible
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8161/admin/
+
+# If the above returns 200, the console is ready
+echo "ActiveMQ Web Console is available at: http://localhost:8161/admin/"
+echo "Default credentials: admin/admin"
+Task 2: Create a Camel Route with ActiveMQ Integration
+Subtask 2.1: Create Maven Project Structure
+Let's create a new Maven project for our Camel-ActiveMQ integration.
+
+# Create project directory
+mkdir -p ~/camel-activemq-lab
+cd ~/camel-activemq-lab
+
+# Create Maven directory structure
+mkdir -p src/main/java/com/example/camel
+mkdir -p src/main/resources
+mkdir -p src/test/java
+Subtask 2.2: Create Maven POM File
+Create the Maven configuration file with all necessary dependencies.
+
+cat > pom.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>camel-activemq-integration</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    
+    <name>Camel ActiveMQ Integration Lab</name>
+    <description>Lab project for integrating Apache Camel with ActiveMQ</description>
+    
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <camel.version>3.20.7</camel.version>
+        <activemq.version>5.17.6</activemq.version>
+        <slf4j.version>1.7.36</slf4j.version>
+        <logback.version>1.2.12</logback.version>
+    </properties>
+    
+    <dependencies>
+        <!-- Camel Core -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-core</artifactId>
+            <version>${camel.version}</version>
+        </dependency>
+        
+        <!-- Camel Main for standalone applications -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-main</artifactId>
+            <version>${camel.version}</version>
+        </dependency>
+        
+        <!-- Camel JMS component -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-jms</artifactId>
+            <version>${camel.version}</version>
+        </dependency>
+        
+        <!-- ActiveMQ Client -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-client</artifactId>
+            <version>${activemq.version}</version>
+        </dependency>
+        
+        <!-- ActiveMQ Pool for connection pooling -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-pool</artifactId>
+            <version>${activemq.version}</version>
+        </dependency>
+        
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+        
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-test-junit5</artifactId>
+            <version>${camel.version}</version>
+            <scope>test</scope>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.9.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>11</source>
+                    <target>11</target>
+                </configuration>
+            </plugin>
+            
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>com.example.camel.CamelActiveMQApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+EOF
+Subtask 2.3: Create Logging Configuration
+Set up logging configuration for better visibility into Camel and ActiveMQ operations.
+
+cat > src/main/resources/logback.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/camel-activemq.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <logger name="org.apache.camel" level="INFO"/>
+    <logger name="org.apache.activemq" level="INFO"/>
+    <logger name="com.example.camel" level="DEBUG"/>
+    
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
+EOF
+
+# Create logs directory
+mkdir -p logs
+Subtask 2.4: Create ActiveMQ Configuration Class
+Create a configuration class to set up the ActiveMQ connection factory.
+
+cat > src/main/java/com/example/camel/ActiveMQConfig.java << 'EOF'
+package com.example.camel;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.apache.activemq.pool.PooledConnectionFactory;
+import org.apache.camel.component.jms.JmsComponent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.jms.ConnectionFactory;
+
+/**
+ * Configuration class for ActiveMQ connection setup
+ */
+public class ActiveMQConfig {
+    
+    private static final Logger logger = LoggerFactory.getLogger(ActiveMQConfig.class);
+    
+    private static final String BROKER_URL = "tcp://localhost:61616";
+    private static final String USERNAME = "admin";
+    private static final String PASSWORD = "admin";
+    
+    /**
+     * Creates and configures ActiveMQ connection factory
+     * @return Configured ConnectionFactory
+     */
+    public static ConnectionFactory createConnectionFactory() {
+        logger.info("Creating ActiveMQ connection factory for broker: {}", BROKER_URL);
+        
+        ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory();
+        connectionFactory.setBrokerURL(BROKER_URL);
+        connectionFactory.setUserName(USERNAME);
+        connectionFactory.setPassword(PASSWORD);
+        
+        // Configure connection factory settings
+        connectionFactory.setTrustAllPackages(true);
+        connectionFactory.setMaxThreadPoolSize(50);
+        
+        return connectionFactory;
+    }
+    
+    /**
+     * Creates a pooled connection factory for better performance
+     * @return Pooled ConnectionFactory
+     */
+    public static PooledConnectionFactory createPooledConnectionFactory() {
+        logger.info("Creating pooled connection factory");
+        
+        PooledConnectionFactory pooledConnectionFactory = new PooledConnectionFactory();
+        pooledConnectionFactory.setConnectionFactory(createConnectionFactory());
+        pooledConnectionFactory.setMaxConnections(10);
+        pooledConnectionFactory.setMaximumActiveSessionPerConnection(100);
+        
+        return pooledConnectionFactory;
+    }
+    
+    /**
+     * Creates JMS component for Camel
+     * @return Configured JmsComponent
+     */
+    public static JmsComponent createJmsComponent() {
+        logger.info("Creating JMS component for Camel");
+        
+        JmsComponent jmsComponent = new JmsComponent();
+        jmsComponent.setConnectionFactory(createPooledConnectionFactory());
+        
+        // Configure JMS component settings
+        jmsComponent.setConcurrentConsumers(5);
+        jmsComponent.setMaxConcurrentConsumers(10);
+        jmsComponent.setReceiveTimeout(5000);
+        
+        return jmsComponent;
+    }
+}
+EOF
+Subtask 2.5: Create Message Processor Classes
+Create classes to handle message processing logic.
+
+cat > src/main/java/com/example/camel/MessageProcessor.java << 'EOF'
+package com.example.camel;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+/**
+ * Custom processor for handling messages
+ */
+public class MessageProcessor implements Processor {
+    
+    private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    
+    @Override
+    public void process(Exchange exchange) throws Exception {
+        String originalMessage = exchange.getIn().getBody(String.class);
+        String timestamp = LocalDateTime.now().format(formatter);
+        
+        logger.info("Processing message: {}", originalMessage);
+        
+        // Transform the message
+        String processedMessage = String.format(
+            "Processed at %s: %s", 
+            timestamp, 
+            originalMessage.toUpperCase()
+        );
+        
+        // Set the processed message back to the exchange
+        exchange.getIn().setBody(processedMessage);
+        
+        // Add custom headers
+        exchange.getIn().setHeader("ProcessedBy", "MessageProcessor");
+        exchange.getIn().setHeader("ProcessedAt", timestamp);
+        
+        logger.info("Message processed successfully: {}", processedMessage);
+    }
+}
+EOF
+cat > src/main/java/com/example/camel/OrderProcessor.java << 'EOF'
+package com.example.camel;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Random;
+
+/**
+ * Processor for handling order messages
+ */
+public class OrderProcessor implements Processor {
+    
+    private static final Logger logger = LoggerFactory.getLogger(OrderProcessor.class);
+    private final Random random = new Random();
+    
+    @Override
+    public void process(Exchange exchange) throws Exception {
+        String orderMessage = exchange.getIn().getBody(String.class);
+        
+        logger.info("Processing order: {}", orderMessage);
+        
+        // Simulate order processing logic
+        String orderId = "ORD-" + (1000 + random.nextInt(9000));
+        String status = random.nextBoolean() ? "APPROVED" : "PENDING";
+        
+        String processedOrder = String.format(
+            "Order ID: %s | Status: %s | Original: %s", 
+            orderId, 
+            status, 
+            orderMessage
+        );
+        
+        exchange.getIn().setBody(processedOrder);
+        exchange.getIn().setHeader("OrderId", orderId);
+        exchange.getIn().setHeader("OrderStatus", status);
+        
+        logger.info("Order processed: {} with status: {}", orderId, status);
+    }
+}
+EOF
+Subtask 2.6: Create Camel Route Builder
+Create the main route builder class that defines the integration patterns.
+
+cat > src/main/java/com/example/camel/CamelRouteBuilder.java << 'EOF'
+package com.example.camel;
+
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.dataformat.JsonLibrary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Camel Route Builder for ActiveMQ integration
+ */
+public class CamelRouteBuilder extends RouteBuilder {
+    
+    private static final Logger logger = LoggerFactory.getLogger(CamelRouteBuilder.class);
+    
+    @Override
+    public void configure() throws Exception {
+        
+        logger.info("Configuring Camel routes for ActiveMQ integration");
+        
+        // Error handling configuration
+        onException(Exception.class)
+            .handled(true)
+            .log("Error processing message: ${exception.message}")
+            .to("jms:queue:error.queue");
+        
+        // Route 1: Simple message transformation route
+        from("jms:queue:input.queue")
+            .routeId("simple-transformation-route")
+            .log("Received message from input.queue: ${body}")
+            .process(new MessageProcessor())
+            .log("Sending processed message to output.queue: ${body}")
+            .to("jms:queue:output.queue");
+        
+        // Route 2: Order processing route with content-based routing
+        from("jms:queue:order.queue")
+            .routeId("order-processing-route")
+            .log("Received order from order.queue: ${body}")
+            .process(new OrderProcessor())
+            .choice()
+                .when(header("OrderStatus").isEqualTo("APPROVED"))
+                    .log("Order approved, sending to fulfillment: ${body}")
+                    .to("jms:queue:fulfillment.queue")
+                .when(header("OrderStatus").isEqualTo("PENDING"))
+                    .log("Order pending, sending to review: ${body}")
+                    .to("jms:queue:review.queue")
+                .otherwise()
+                    .log("Unknown order status, sending to error: ${body}")
+                    .to("jms:queue:error.queue");
+        
+        // Route 3: Topic-based publish-subscribe pattern
+        from("jms:queue:notification.input")
+            .routeId("notification-publisher-route")
+            .log("Publishing notification to topic: ${body}")
+            .multicast()
+                .to("jms:topic:email.notifications")
+                .to("jms:topic:sms.notifications")
+                .to("jms:topic:push.notifications");
+        
+        // Route 4: Topic subscribers
+        from("jms:topic:email.notifications")
+            .routeId("email-notification-subscriber")
+            .log("Email notification received: ${body}")
+            .transform(simple("EMAIL: ${body}"))
+            .to("jms:queue:processed.notifications");
+        
+        from("jms:topic:sms.notifications")
+            .routeId("sms-notification-subscriber")
+            .log("SMS notification received: ${body}")
+            .transform(simple("SMS: ${body}"))
+            .to("jms:queue:processed.notifications");
+        
+        // Route 5: Aggregation pattern - collect messages and process in batches
+        from("jms:queue:batch.input")
+            .routeId("batch-aggregation-route")
+            .log("Received message for batching: ${body}")
+            .aggregate(constant(true))
+                .completionSize(3)
+                .completionTimeout(10000)
+                .log("Processing batch of ${body.size} messages")
+                .split(body())
+                    .log("Processing individual message from batch: ${body}")
+                    .to("jms:queue:batch.output");
+        
+        // Route 6: Request-Reply pattern
+        from("jms:queue:request.queue")
+            .routeId("request-reply-route")
+            .log("Processing request: ${body}")
+            .transform(simple("Response to: ${body}"))
+            .log("Sending response: ${body}");
+        
+        // Route 7: Dead Letter Queue pattern
+        from("jms:queue:risky.queue")
+            .routeId("risky-processing-route")
+            .errorHandler(deadLetterChannel("jms:queue:dead.letter.queue")
+                .maximumRedeliveries(3)
+                .redeliveryDelay(2000))
+            .log("Processing risky message: ${body}")
+            .process(exchange -> {
+                // Simulate random failures for demonstration
+                if (Math.random() < 0.3) {
+                    throw new RuntimeException("Simulated processing error");
+                }
+                exchange.getIn().setBody("Successfully processed: " + exchange.getIn().getBody());
+            })
+            .log("Risky message processed successfully: ${body}")
+            .to("jms:queue:success.queue");
+        
+        logger.info("Camel routes configured successfully");
+    }
+}
+EOF
+Subtask 2.7: Create Main Application Class
+Create the main application class to bootstrap the Camel context.
+
+cat > src/main/java/com/example/camel/CamelActiveMQApplication.java << 'EOF'
+package com.example.camel;
+
+import org.apache.camel.main.Main;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Main application class for Camel-ActiveMQ integration
+ */
+public class CamelActiveMQApplication {
+    
+    private static final Logger logger = LoggerFactory.getLogger(CamelActiveMQApplication.class);
+    
+    public static void main(String[] args) throws Exception {
+        logger.info("Starting Camel-ActiveMQ Integration Application");
+        
+        // Create Camel Main instance
+        Main main = new Main();
+        
+        // Configure the application
+        main.configure().addRoutesBuilder(new CamelRouteBuilder());
+        
+        // Add JMS component to Camel context
+        main.bind("jms", ActiveMQConfig.createJmsComponent());
+        
+        // Configure main settings
+        main.configure().setDurationMaxMessages(0); // Run indefinitely
+        main.configure().setShutdownTimeout(30);
+        
+        // Add shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("Shutting down Camel-ActiveMQ Integration Application");
+            try {
+                main.stop();
+            } catch (Exception e) {
+                logger.error("Error during shutdown", e);
+            }
+        }));
+        
+        logger.info("Camel-ActiveMQ Integration Application started successfully");
+        logger.info("Press Ctrl+C to stop the application");
+        
+        // Start the application
+        main.run(args);
+    }
+}
+EOF
+Task 3: Test Message Communication Through the Broker
+Subtask 3.1: Build the Project
+Let's build our Maven project and resolve all dependencies.
+
+# Navigate to project directory
+cd ~/camel-activemq-lab
+
+# Clean and compile the project
+mvn clean compile
+
+# Package the application
+mvn package
+
+# Verify the build was successful
+echo "Build completed. JAR file location:"
+ls -la target/*.jar
+Subtask 3.2: Create Message Testing Utilities
+Create utility classes for sending test messages to various queues.
+
+cat > src/main/java/com/example/camel/MessageSender.java << 'EOF'
+package com.example.camel;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.jms.*;
+import java.util.Scanner;
+
+/**
+ * Utility class for sending test messages to ActiveMQ queues
+ */
+public class MessageSender {
+    
+    private static final Logger logger = LoggerFactory.getLogger(MessageSender.class);
+    private static final String BROKER_URL = "tcp://localhost:61616";
+    
+    public static void main(String[] args) {
+        try {
+            // Create connection factory
+            ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(BROKER_URL);
+            
+            // Create connection and session
+            Connection connection = connectionFactory.createConnection();
+            connection.start();
+            
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            
+            Scanner scanner = new Scanner(System.in);
+            
+            while (true) {
+                System.out.println("\n=== Message Sender Menu ===");
+                System.out.println("1. Send to input.queue (simple transformation)");
+                System.out.println("2. Send to order.queue (order processing)");
+                System.out.println("3. Send to notification.input (pub-sub pattern)");
+                System.out.println("4. Send to batch.input (aggregation pattern)");
+                System.out.println("5. Send to request.queue (request-reply)");
+                System.out.println("6. Send to risky.queue (error handling)");
+                System.out.println("7. Exit");
+                System.out.print("Choose an option: ");
+                
+                int choice = scanner.nextInt();
+                scanner.nextLine(); // Consume newline
+                
+                if (choice == 7) {
+                    break;
+                }
+                
+                System.out.print("Enter message content: ");
+                String messageContent = scanner.nextLine();
+                
+                String queueName = getQueueName(choice);
+                if (queueName != null) {
+                    sendMessage(session, queueName, messageContent);
+                }
+            }
+            
+            // Cleanup
+            session.close();
+            connection.close();
+            scanner.close();
+            
+        } catch (Exception e) {
+            logger.error("Error in message sender", e);
+        }
+    }
+    
+    private static String getQueueName(int choice) {
+        switch (choice) {
+            case 1: return "input.queue";
+            case 2: return "order.queue";
+            case 3: return "notification.input";
+            case 4: return "batch.input";
+            case 5: return "request.queue";
+            case 6: return "risky.queue";
+            default: 
+                System.out.println("Invalid choice!");
+                return null;
+        }
+    }
+    
+    private static void sendMessage(Session session, String queueName, String messageContent) {
+        try {
+            Destination destination = session.createQueue(queueName);
+            MessageProducer producer = session.createProducer(destination);
+            
+            TextMessage message = session.createTextMessage(messageContent);
+            producer.send(message);
+            
+            logger.info("Message sent to {}: {}", queueName, messageContent);
+            System.out.println("Message sent successfully to " + queueName);
+            
+            producer.close();
+            
+        } catch (Exception e) {
+            logger.error("Error sending message to " + queueName, e);
+        }
+    }
+}
+EOF
+cat > src/main/java/com/example/camel/MessageReceiver.java << 'EOF'
+package com.example.camel;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.jms.*;
+import java.util.Scanner;
+
+/**
+ * Utility class for receiving messages from ActiveMQ queues
+ */
+public class MessageReceiver {
+    
+    private static final Logger logger = LoggerFactory.getLogger(MessageReceiver.class);
+    private static final String BROKER_URL = "tcp://localhost:61616";
+    
+    public static void main(String[] args) {
+        try {
+            // Create connection factory
+            ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(BROKER_URL);
+            
+            // Create connection and session
+            Connection connection = connectionFactory.createConnection();
+            connection.start();
+            
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            
+            Scanner scanner = new Scanner(System.in);
+            
+            while (true) {
+                System.out.println("\n=== Message Receiver Menu ===");
+                System.out.println("1. Receive from output.queue");
+                System.out.println("2. Receive from fulfillment.queue");
+                System.out.println("3. Receive from review.queue");
+                System.out.println("4. Receive from processed.notifications");
+                System.out.println("5. Receive from batch.output");
+                System.out.println("6. Receive from success.queue");
+                System.out.println("7. Receive from error.queue");
+                System.out.println("8. Receive from
